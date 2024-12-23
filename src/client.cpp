@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cstring>
 #include <string>
+#include <thread>
 
 int main(){
 	// Initialize ENet
@@ -39,20 +40,30 @@ int main(){
 
 	// Wait for the connection to succeed
 	ENetEvent event;
-	if(enet_host_service(client, &event, 5000) > 0 &&
+	if(enet_host_service(client, &event, 1000) > 0 &&
 		event.type== ENET_EVENT_TYPE_CONNECT){
 		std::cout<< "Connection succeeded!"<< std::endl;
 		
-		// Send a message to the server
-		{
-			const char* msg= "Hello, world!";
-			ENetPacket* packet= enet_packet_create(msg, 
-												  strlen(msg) + 1, 
-												  ENET_PACKET_FLAG_RELIABLE); // Reliable packet (TCP)
-			enet_peer_send(peer, 0, packet);
-		}
+		bool running= true;
 		
-		while(enet_host_service(client, &event, 5000) > 0){ // 5 second timeout
+		std::thread input_thread([&running, peer](){
+			std::string input;
+			while(running){
+				std::getline(std::cin, input);
+				if(input== "quit"){
+					running= false;
+				}
+				else{
+					ENetPacket* packet= enet_packet_create(input.c_str(), 
+															input.size() + 1, 
+															ENET_PACKET_FLAG_RELIABLE);
+					enet_peer_send(peer, 0, packet);
+				}
+			}
+		});
+		input_thread.detach();
+		
+		while(running && enet_host_service(client, &event, 1000) >= 0){ // 1 second timeout
 			switch(event.type){
 				case ENET_EVENT_TYPE_RECEIVE: // A packet was received
 					std::cout<< "Message from server: " 
