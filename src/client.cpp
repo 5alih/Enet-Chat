@@ -74,8 +74,7 @@ int main(){
 		while(running && enet_host_service(client, &event, 1000) >= 0){ // 1 second timeout
 			switch(event.type){
 				case ENET_EVENT_TYPE_RECEIVE: // A packet was received
-					std::cout<< "Message from server: " 
-							<< event.packet->data // Message
+					std::cout<< event.packet->data // Message
 							<< std::endl;
 					enet_packet_destroy(event.packet); // Clean up the packet
 					break;
