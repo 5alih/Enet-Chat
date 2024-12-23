@@ -11,6 +11,10 @@ int main(){
 		return 1;
 	}
 
+	std::cout << "Enter your username: ";
+	std::string username;
+	std::getline(std::cin, username);
+
 	ENetHost* client;
 	
 	// Create a client host
@@ -25,9 +29,9 @@ int main(){
 	ENetAddress address;
 	ENetPeer* peer;
 	
-	// Connect to localhost:1453
+	// Connect to localhost:1919
 	enet_address_set_host(&address, "localhost");
-	address.port= 1453;
+	address.port= 1919;
 	
 	// Create a peer to connect to the server
 	peer= enet_host_connect(client, &address, 1, 0);
@@ -44,8 +48,12 @@ int main(){
 		event.type== ENET_EVENT_TYPE_CONNECT){
 		std::cout<< "Connection succeeded!"<< std::endl;
 		
+		ENetPacket* packet= enet_packet_create(username.c_str(), 
+												username.size() + 1, 
+												ENET_PACKET_FLAG_RELIABLE);
+		enet_peer_send(peer, 0, packet);
+
 		bool running= true;
-		
 		std::thread input_thread([&running, peer](){
 			std::string input;
 			while(running){
