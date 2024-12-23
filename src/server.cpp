@@ -2,7 +2,7 @@
 #include <iostream>
 #include <string>
 #include <cstring>
-#include <thread>
+#include <vector>
 
 int main(){
 	// Initialize ENet
@@ -18,34 +18,19 @@ int main(){
 	address.host= ENET_HOST_ANY;
 	address.port= 1453;
 	
-	server= enet_host_create(&address,1, 1, 0, 0); // 1 client, 1 channel
+	server= enet_host_create(&address,3, 1, 0, 0); // 3 clients, 1 channel
 	
 	// Check if the server was created successfully
 	if(server== nullptr){
 		std::cerr<< "Failed to create ENet server"<< std::endl;
 		return 1;
 	}
-
 	std::cout<< "Server started on port 1453"<< std::endl;
-	std::cout<< "Server running. Type 'quit' to stop."<< std::endl;
 
-	bool running= true;
-	
-	// Create a thread to handle input (only 'quit' for now)
-	std::thread input_thread([&running](){
-		std::string input;
-		while(running){
-			std::getline(std::cin, input);
-			if(input== "quit"){
-				running= false;
-			}
-		}
-	});
-	// Detach the thread so it can run in the background
-	input_thread.detach();
+	std::vector<ENetPeer*> clients;
 
 	// Main loop
-	while(running){
+	while(1){
 		ENetEvent event;
 		
 		// Check for events
@@ -55,6 +40,7 @@ int main(){
 					std::cout<< "A new client connected from "
 							<< event.peer->address.host<< ":" 			// IP
 							<< event.peer->address.port<< std::endl; 	// Port
+					clients.push_back(event.peer);
 					break;
 
 				case ENET_EVENT_TYPE_RECEIVE: // A packet was received
@@ -64,12 +50,17 @@ int main(){
 								<< std::endl;
 						
 						// Send a response
-						const char* msg= "Server received your message!";
+						const char* msg= (const char*)event.packet->data;
 						ENetPacket* packet= enet_packet_create(msg, 
 															  strlen(msg) + 1, 
 															  ENET_PACKET_FLAG_RELIABLE); // Reliable packet (TCP)
-						enet_peer_send(event.peer, 0, packet); // Send the packet to channel 0
-						
+
+						// Send the packet to all clients
+						for(auto& client : clients){
+							if(client== event.peer) continue; // Don't send the message to the sender
+							enet_peer_send(client, 0, packet);
+						}
+
 						// Clean up the packet
 						enet_packet_destroy(event.packet);
 						break;
