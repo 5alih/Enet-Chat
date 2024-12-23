@@ -3,7 +3,6 @@
 #include <string>
 #include <cstring>
 #include <vector>
-
 #include <algorithm>
 
 struct Client{
@@ -119,7 +118,6 @@ int main(){
 							}
 						}
 						clients.erase(it);
-
 					}
 					event.peer->data = nullptr;
 					break;
