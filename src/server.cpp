@@ -2,7 +2,13 @@
 #include <iostream>
 #include <string>
 #include <cstring>
-#include <thread>
+#include <vector>
+#include <algorithm>
+
+struct Client{
+	ENetPeer* peer;
+	std::string username;
+};
 
 int main(){
 	// Initialize ENet
@@ -16,72 +22,106 @@ int main(){
 	
 	// Create a server host
 	address.host= ENET_HOST_ANY;
-	address.port= 1453;
+	address.port= 1919;
 	
-	server= enet_host_create(&address,1, 1, 0, 0); // 1 client, 1 channel
+	server= enet_host_create(&address,3, 1, 0, 0); // 3 clients, 1 channel
 	
 	// Check if the server was created successfully
 	if(server== nullptr){
 		std::cerr<< "Failed to create ENet server"<< std::endl;
 		return 1;
 	}
+	std::cout<< "Server started on port 1919"<< std::endl;
 
-	std::cout<< "Server started on port 1453"<< std::endl;
-	std::cout<< "Server running. Type 'quit' to stop."<< std::endl;
-
-	bool running= true;
-	
-	// Create a thread to handle input (only 'quit' for now)
-	std::thread input_thread([&running](){
-		std::string input;
-		while(running){
-			std::getline(std::cin, input);
-			if(input== "quit"){
-				running= false;
-			}
-		}
-	});
-	// Detach the thread so it can run in the background
-	input_thread.detach();
+	std::vector<Client> clients;
 
 	// Main loop
-	while(running){
+	while(1){
 		ENetEvent event;
 		
 		// Check for events
 		while(enet_host_service(server, &event, 1000) > 0){	// 1 second timeout
 			switch(event.type){
-				case ENET_EVENT_TYPE_CONNECT: // A new client connected
+				case ENET_EVENT_TYPE_CONNECT: {
+				// A new client connected
 					std::cout<< "A new client connected from "
 							<< event.peer->address.host<< ":" 			// IP
 							<< event.peer->address.port<< std::endl; 	// Port
+					Client newClient= {event.peer, "Unknown"};
+					clients.push_back(newClient);
 					break;
+				}
+                case ENET_EVENT_TYPE_RECEIVE: {
+                    std::string message((char*)event.packet->data);
+                    
+                    // Find the client who sent the message
+                    auto sender = std::find_if(clients.begin(), clients.end(),
+                        [&](const Client& c) { return c.peer == event.peer; });
+                    
+                    if (sender != clients.end()) {
+                        if (sender->username == "Unknown") {
+                            // This is the username registration message
+                            sender->username = message;
+                            std::string welcome = sender->username + " joined the chat!";
+                            std::cout << welcome << std::endl;
+                            
+                            // Broadcast join message to all clients
+                            for (const auto& client : clients) {
+                                if (client.peer != event.peer) {
+                                    ENetPacket* packet = enet_packet_create(
+                                        welcome.c_str(),
+                                        welcome.length() + 1,
+                                        ENET_PACKET_FLAG_RELIABLE
+                                    );
+                                    enet_peer_send(client.peer, 0, packet);
+                                }
+                            }
+                        } else {
+                            // Regular chat message
+                            std::string formatted = sender->username + ": " + message;
+                            std::cout << formatted << std::endl;
+                            
+                            // Broadcast to all other clients
+                            for (const auto& client : clients) {
+                                if (client.peer != event.peer) {
+                                    ENetPacket* packet = enet_packet_create(
+                                        formatted.c_str(),
+                                        formatted.length() + 1,
+                                        ENET_PACKET_FLAG_RELIABLE
+                                    );
+                                    enet_peer_send(client.peer, 0, packet);
+                                }
+                            }
+                        }
+                    }
+                    enet_packet_destroy(event.packet);
+                    break;
+                }
 
-				case ENET_EVENT_TYPE_RECEIVE: // A packet was received
-					{
-						std::cout<< "Message received: " 
-								<< event.packet->data	// Message
-								<< std::endl;
+				case ENET_EVENT_TYPE_DISCONNECT: {
+					auto it = std::find_if(clients.begin(), clients.end(),
+						[&](const Client& c) { return c.peer == event.peer; });
+					
+					if (it != clients.end()) {
+						std::string disconnect_msg = it->username + " left the chat!";
+						std::cout << disconnect_msg << std::endl;
 						
-						// Send a response
-						const char* msg= "Server received your message!";
-						ENetPacket* packet= enet_packet_create(msg, 
-															  strlen(msg) + 1, 
-															  ENET_PACKET_FLAG_RELIABLE); // Reliable packet (TCP)
-						enet_peer_send(event.peer, 0, packet); // Send the packet to channel 0
-						
-						// Clean up the packet
-						enet_packet_destroy(event.packet);
-						break;
+						// Broadcast disconnect message
+						for (const auto& client : clients) {
+							if (client.peer != event.peer) {
+								ENetPacket* packet = enet_packet_create(
+									disconnect_msg.c_str(),
+									disconnect_msg.length() + 1,
+									ENET_PACKET_FLAG_RELIABLE
+								);
+								enet_peer_send(client.peer, 0, packet);
+							}
+						}
+						clients.erase(it);
 					}
-
-				case ENET_EVENT_TYPE_DISCONNECT: // A client disconnected from the server
-					std::cout<< "Client disconnected!"<< std::endl;
-					event.peer->data= nullptr;
+					event.peer->data = nullptr;
 					break;
-				
-				case ENET_EVENT_TYPE_NONE: // No events occurred within the timeout period (1 second)
-					break;
+				}
 			}
 		}
 	}
