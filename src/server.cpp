@@ -5,8 +5,6 @@
 #include <vector>
 #include <algorithm>
 
-//test
-
 struct Client{
 	ENetPeer* peer;
 	std::string username;
